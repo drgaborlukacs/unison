@@ -172,6 +172,10 @@ and updateContent =
        * bool                         (*   - is the directory now empty? *)
   | Symlink                           (* Path refers to a symbolic link *)
       of string                       (*   - link text *)
+  | Hardlink                          (* Path is a hardlink alias of another
+                                         synchronized path on the same replica *)
+      of Path.t                       (*   - canonical primary path *)
+       * float                        (*   - mtime of the linked content *)
 
 let mupdateItem_rec mupdateContent =
   Umarshal.(sum3 unit (prod2 mupdateContent mprevState id id) string
@@ -185,21 +189,24 @@ let mupdateItem_rec mupdateContent =
                | I33 a -> Error a))
 
 let mupdateContent_rec mupdateItem =
-  Umarshal.(sum4
+  Umarshal.(sum5
               unit
               (prod2 Props.m mcontentschange id id)
               (prod4 Props.m (list (prod2 Name.m mupdateItem id id)) mpermchange bool id id)
               string
+              (prod2 Path.m float id id)
               (function
-               | Absent -> I41 ()
-               | File (a, b) -> I42 (a, b)
-               | Dir (a, b, c, d) -> I43 (a, b, c, d)
-               | Symlink a -> I44 a)
+               | Absent -> I51 ()
+               | File (a, b) -> I52 (a, b)
+               | Dir (a, b, c, d) -> I53 (a, b, c, d)
+               | Symlink a -> I54 a
+               | Hardlink (p, m) -> I55 (p, m))
               (function
-               | I41 () -> Absent
-               | I42 (a, b) -> File (a, b)
-               | I43 (a, b, c, d) -> Dir (a, b, c, d)
-               | I44 a -> Symlink a))
+               | I51 () -> Absent
+               | I52 (a, b) -> File (a, b)
+               | I53 (a, b, c, d) -> Dir (a, b, c, d)
+               | I54 a -> Symlink a
+               | I55 (p, m) -> Hardlink (p, m)))
 
 let mupdateContent, mupdateItem =
   Umarshal.rec2 mupdateItem_rec mupdateContent_rec
@@ -336,6 +343,17 @@ let isDeletion ri =
         Replica1ToReplica2, `ABSENT, _ -> true
       | Replica2ToReplica1, _, `ABSENT -> true
       | _ -> false)
+  | _ -> false
+
+let isHardlinkSecondary ri =
+  let isHardlink rc =
+    match rc.ui with
+    | Updates (Hardlink _, _) -> true
+    | _ -> false
+  in
+  match ri.replicas with
+    Different {rc1; rc2; direction = Replica1ToReplica2} -> isHardlink rc1
+  | Different {rc1; rc2; direction = Replica2ToReplica1} -> isHardlink rc2
   | _ -> false
 
 let rcType rc = Fileinfo.type2string rc.typ

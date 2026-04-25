@@ -997,7 +997,12 @@ let doTransport reconItemList numskip isSkip =
         | _ ->
             fail e) in
   stopAtIntr begin fun () ->
-    Uicommon.transportItems items (fun {ri; _} -> not (Common.isDeletion ri)) uiWrapper;
+    Uicommon.transportItems items
+      (fun {ri; _} ->
+         not (Common.isDeletion ri) && not (Common.isHardlinkSecondary ri))
+      uiWrapper;
+    Uicommon.transportItems items
+      (fun {ri; _} -> Common.isHardlinkSecondary ri) uiWrapper;
     Uicommon.transportItems items (fun {ri; _} -> Common.isDeletion ri) uiWrapper
   end;
   Uicommon.transportFinish ();

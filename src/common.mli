@@ -76,6 +76,13 @@ and updateContent =
        * bool                         (*   - is the directory now empty? *)
   | Symlink                           (* Path refers to a symbolic link *)
       of string                       (*   - link text *)
+  | Hardlink                          (* Path is a hardlink alias of another
+                                         synchronized path on the same replica *)
+      of Path.t                       (*   - canonical primary path *)
+       * float                        (*   - mtime of the linked content
+                                             (primary content changes show
+                                             up here because hardlinked
+                                             aliases share an inode) *)
 
 val mupdateItem : updateItem Umarshal.t
 val mupdateContent : updateContent Umarshal.t
@@ -209,3 +216,8 @@ val problematic : reconItem -> bool
    directory *)
 val partiallyProblematic : reconItem -> bool
 val isDeletion  : reconItem -> bool
+val isHardlinkSecondary : reconItem -> bool
+(** True if this recon item's source side is a [Hardlink] update content
+    (a non-canonical alias).  Such items must be processed *after* the
+    primary's content has been propagated, since they depend on the
+    primary existing on the destination. *)

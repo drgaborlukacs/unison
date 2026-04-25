@@ -429,7 +429,7 @@ let rec checkForError ui =
       match uc with
         Dir (_, children, _, _) ->
           Safelist.iter (fun (_, uiSub) -> checkForError uiSub) children
-      | Absent | File _ | Symlink _ ->
+      | Absent | File _ | Symlink _ | Hardlink _ ->
           ()
 
 let rec collectErrors ui rem =
@@ -443,7 +443,7 @@ let rec collectErrors ui rem =
         Dir (_, children, _, _) ->
           Safelist.fold_right
             (fun (_, uiSub) rem -> collectErrors uiSub rem) children rem
-      | Absent | File _ | Symlink _ ->
+      | Absent | File _ | Symlink _ | Hardlink _ ->
           rem
 
 (* lifting errors in individual updates to replica problems                  *)
@@ -505,6 +505,12 @@ let update2replicaContent path (conflict: bool) ui props ucNew oldType:
        ui = ui; size = size; props = props}
   | Symlink l ->
       {typ = `SYMLINK; status = `Modified; desc = Props.dummy;
+       ui = ui; size = size; props = props}
+  | Hardlink (_, _) when oldType <> `FILE ->
+      {typ = `FILE; status = `Created; desc = Props.dummy;
+       ui = ui; size = size; props = props}
+  | Hardlink (_, _) ->
+      {typ = `FILE; status = `Modified; desc = Props.dummy;
        ui = ui; size = size; props = props}
   | Dir (desc, _, _, _) when oldType <> `DIRECTORY ->
       {typ = `DIRECTORY; status = `Created; desc = desc;
@@ -754,6 +760,13 @@ let rec reconcile
          (add_equal counter equals (uc1, uc2), unequals)
        else
          different uc1 uc2 "symbolic links changed on both sides"
+                   (oldType prev) equals unequals
+  | (Updates (Hardlink (p1, m1) as uc1, prev),
+     Updates (Hardlink (p2, m2) as uc2, _)) ->
+       if Path.compare p1 p2 = 0 && m1 = m2 then
+         (add_equal counter equals (uc1, uc2), unequals)
+       else
+         different uc1 uc2 "hardlink topology changed on both sides"
                    (oldType prev) equals unequals
   | (Updates (uc1, prev), Updates (uc2, _)) ->
       different uc1 uc2 "conflicting updates"

@@ -15,6 +15,9 @@ val createUnisonDir : unit -> unit
 val childrenOf : Fspath.t -> Path.local -> Name.t list
 val readLink : Fspath.t -> Path.local -> string
 val symlink : Fspath.t -> Path.local -> string -> unit
+val link : Fspath.t -> Path.local -> Path.local -> unit
+(** [link fspath src dst] creates [dst] as a hardlink to [src],
+    both interpreted as relative to [fspath]. *)
 
 val rename : ?exdev:(unit -> unit) -> string -> Fspath.t -> Path.local ->
   Fspath.t -> Path.local -> unit

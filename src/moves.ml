@@ -233,7 +233,7 @@ let extractStamp rc =
           | PrevDir _ | PrevSymlink | New -> assert false
           end
       | File (_, ContentsUpdated (_, stamp, _)) -> stamp
-      | Dir _ | Symlink _ -> assert false
+      | Dir _ | Symlink _ | Hardlink _ -> assert false
 
 let extractProps rc =
   match rc.ui with
@@ -248,7 +248,7 @@ let extractProps rc =
           end
       | File (props, _)
       | Dir (props, _, _, _) -> props
-      | Symlink _ -> assert false
+      | Symlink _ | Hardlink _ -> assert false
 
 exception Best of (int * int)
 exception Time
@@ -401,6 +401,8 @@ let rec hashArchive arch h =
       Uutil.hash2 (Uutil.hash dig) h
   | ArchiveSymlink content ->
       Uutil.hash2 (Uutil.hash content) h
+  | ArchiveHardlink (primary, _) ->
+      Uutil.hash2 (Uutil.hash (Path.toString primary)) h
   | NoArchive ->
       135
 
@@ -439,13 +441,14 @@ let processHint rep path differ = function
       addDirCandidate false rep path dirHash differ
   (* Not interested in the following *)
   | {status = `Created; ui = Updates (Symlink _, _); _}
+  | {status = `Created; ui = Updates (Hardlink _, _); _}
   | {status = `Deleted; ui = Updates (_, PrevSymlink); _}
   | {status = `Modified | `PropsChanged | `Unchanged | `MovedOut _ | `MovedIn _; _}
   | {ui = NoUpdates | Error _; _}
   (* Impossible combinations  *)
   | {status = `Created; ui = Updates (Absent, _); _}
   | {status = `Created; ui = Updates (File (_, ContentsSame), _); _}
-  | {status = `Deleted; ui = Updates ((File _ | Dir _ | Symlink _), _); _}
+  | {status = `Deleted; ui = Updates ((File _ | Dir _ | Symlink _ | Hardlink _), _); _}
   | {status = `Deleted; ui = Updates (_, New); _} ->
       ()
 

@@ -43,7 +43,7 @@ let ignoreArchives =
    representation does not change between unison versions.) *)
 (*FIX: consider changing the way case-sensitivity mode is stored in
   the archive *)
-let archiveFormat = 23
+let archiveFormat = 24
 
 module NameMap = MyMap.Make (Name)
 
@@ -52,22 +52,25 @@ type archive =
   | ArchiveFile of Props.t * Os.fullfingerprint * Fileinfo.stamp * Osx.ressStamp
   | ArchiveSymlink of string
   | NoArchive
+  | ArchiveHardlink of Path.t * float
 
 let marchive_rec marchive =
-  Umarshal.(sum4
+  Umarshal.(sum5
               (prod2 Props.m (NameMap.m marchive) id id)
               (prod4 Props.m Os.mfullfingerprint Fileinfo.mstamp Osx.mressStamp id id)
-              string unit
+              string unit (prod2 Path.m float id id)
               (function
-               | ArchiveDir (a, b) -> I41 (a, b)
-               | ArchiveFile (a, b, c, d) -> I42 (a, b, c, d)
-               | ArchiveSymlink a -> I43 a
-               | NoArchive -> I44 ())
+               | ArchiveDir (a, b) -> I51 (a, b)
+               | ArchiveFile (a, b, c, d) -> I52 (a, b, c, d)
+               | ArchiveSymlink a -> I53 a
+               | NoArchive -> I54 ()
+               | ArchiveHardlink (p, m) -> I55 (p, m))
               (function
-               | I41 (a, b) -> ArchiveDir (a, b)
-               | I42 (a, b, c, d) -> ArchiveFile (a, b, c, d)
-               | I43 a -> ArchiveSymlink a
-               | I44 () -> NoArchive))
+               | I51 (a, b) -> ArchiveDir (a, b)
+               | I52 (a, b, c, d) -> ArchiveFile (a, b, c, d)
+               | I53 a -> ArchiveSymlink a
+               | I54 () -> NoArchive
+               | I55 (p, m) -> ArchiveHardlink (p, m)))
 
 let marchive = Umarshal.rec1 marchive_rec
 
@@ -79,6 +82,7 @@ let archive2string = function
   | ArchiveFile(_) -> "ArchiveFile"
   | ArchiveSymlink(_) -> "ArchiveSymlink"
   | NoArchive -> "NoArchive"
+  | ArchiveHardlink(_) -> "ArchiveHardlink"
 
 (*****************************************************************************)
 (*                             ARCHIVE NAMING                                *)
@@ -277,6 +281,8 @@ let rec checkArchive
       Uutil.hash2 (Uutil.hash dig) (Props.hash desc h)
   | ArchiveSymlink content ->
       Uutil.hash2 (Uutil.hash content) h
+  | ArchiveHardlink (primary, _) ->
+      Uutil.hash2 (Uutil.hash (Path.toString primary)) h
   | NoArchive ->
       135
 
@@ -604,6 +610,7 @@ let prunePropsdata archive =
     | ArchiveFile (props, _, _, _) ->
         Props.Data.gcKeep props
     | ArchiveSymlink _ -> ()
+    | ArchiveHardlink _ -> ()
     | NoArchive -> ()
   in
   let t0 = Unix.gettimeofday () in
@@ -651,6 +658,8 @@ let rec showArchive = function
         (Os.fullfingerprint_to_string fingerprint)
   | ArchiveSymlink(s) ->
       Format.printf "Symbolic link: %s@\n" s
+  | ArchiveHardlink (p, _) ->
+      Format.printf "Hardlink alias of %s@\n" (Path.toString p)
   | NoArchive ->
       Format.printf "No archive@\n"
 
@@ -709,7 +718,7 @@ let rec makeCaseSensitiveRec arch =
       let children =
         List.fold_left (fun chs nm -> NameMap.remove nm chs) children !dups in
       ArchiveDir (desc, children)
-  | ArchiveFile _ | ArchiveSymlink _ | NoArchive ->
+  | ArchiveFile _ | ArchiveSymlink _ | ArchiveHardlink _ | NoArchive ->
       arch
 
 let makeCaseSensitive thisRoot =
@@ -786,7 +795,7 @@ let rec populateCacheFromArchiveRec path arch =
         children
   | ArchiveFile (desc, dig, stamp, ress) ->
       Fpcache.save path (desc, dig, stamp, ress)
-  | ArchiveSymlink _ | NoArchive ->
+  | ArchiveSymlink _ | ArchiveHardlink _ | NoArchive ->
       ()
 
 let populateCacheFromArchive fspath arch =
@@ -1460,6 +1469,11 @@ let oldInfoOf archive =
       Common.PrevFile (oldDesc, dig, oldStamp, ress)
   | ArchiveSymlink _ ->
       Common.PrevSymlink
+  | ArchiveHardlink _ ->
+      (* No PrevHardlink yet; report as a file so [oldType] is `FILE.
+         The fingerprint/stamp/ress are dummy. *)
+      Common.PrevFile (Props.dummy, Os.fullfingerprint_dummy,
+                       Fileinfo.NoStamp, Osx.ressDummy)
   | NoArchive ->
       absentInfo
 
@@ -1846,6 +1860,31 @@ and buildUpdateRec archive currfspath path scanInfo =
       | _ -> None
     in
     let info = Fileinfo.get ?archProps true currfspath path in
+    let hardlinkUpdate =
+      if info.Fileinfo.typ = `FILE && Hardlinks.syncing () then
+        match Hardlinks.primaryOf path with
+        | Some primary
+          when Path.toString primary <> Path.toString path ->
+            let primaryG = Path.makeGlobal primary in
+            let mtime = Props.time info.Fileinfo.desc in
+            (match archive with
+             | ArchiveHardlink (prevPrim, prevMtime)
+               when Path.compare prevPrim primaryG = 0
+                    && prevMtime = mtime ->
+                 Some (None, NoUpdates)
+             | _ ->
+                 debug (fun () ->
+                   Util.msg "  buildUpdate -> Hardlink alias of %s\n"
+                     (Path.toString primaryG));
+                 Some (None,
+                       Updates (Hardlink (primaryG, mtime),
+                                oldInfoOf archive)))
+        | _ -> None
+      else None
+    in
+    match hardlinkUpdate with
+    | Some r -> r
+    | None ->
     match (info.Fileinfo.typ, archive) with
       (`ABSENT, NoArchive) ->
         debug (fun() -> Util.msg "  buildUpdate -> Absent and no archive\n");
@@ -2419,6 +2458,7 @@ let t1 = Unix.gettimeofday () in
   let (cacheFilename, _) = archiveName fspath FPCache in
   let cacheFile = Util.fileInUnisonDir cacheFilename in
   Fpcache.init scanInfo.fastCheck (Prefs.read ignoreArchives) cacheFile;
+  Hardlinks.beginScan ();
   let unchangedOptions =
     try
       Hashtbl.find previousFindOptions scanInfo.archHash
@@ -2489,6 +2529,7 @@ let t1 = Unix.gettimeofday () in
       paths (archive, [])
   in
   Fpcache.finish ();
+  Hardlinks.endScan fspath;
 (*
 let t2 = Unix.gettimeofday () in
 Format.eprintf "Update detection: %f@." (t2 -. t1);
@@ -2696,6 +2737,8 @@ let rec updateArchiveRec ui archive =
           ArchiveFile (desc, fp, stamp, ress)
       | Symlink l ->
           ArchiveSymlink l
+      | Hardlink (p, m) ->
+          ArchiveHardlink (p, m)
       | Dir (desc, children, _, _) ->
           begin match archive with
             ArchiveDir (_, arcCh) ->
@@ -2738,7 +2781,7 @@ let rec stripArchive path arch =
            children NameMap.empty)
   | ArchiveFile (desc, fp, stamp, ress) ->
       ArchiveFile (Props.strip desc, fp, stamp, ress)
-  | ArchiveSymlink _ | NoArchive ->
+  | ArchiveSymlink _ | ArchiveHardlink _ | NoArchive ->
       arch
 
 let updateArchive fspath path ui =
@@ -2951,6 +2994,10 @@ let rec explainUpdate path ui =
       reportUpdate false
         (Format.sprintf "The symlink %s has been created\n"
            (Path.toString path))
+  | Updates (Hardlink (primary, _), _) ->
+      reportUpdate false
+        (Format.sprintf "The path %s is a hardlink alias of %s\n"
+           (Path.toString path) (Path.toString primary))
   | Updates (Dir (_, _, PropsUpdated, _), PrevDir _) ->
       reportUpdate false
         (Format.sprintf
@@ -3009,6 +3056,8 @@ let rec archiveSize arch =
       fileSize desc ress
   | ArchiveSymlink _ ->
       sizeOne
+  | ArchiveHardlink _ ->
+      sizeOne
 
 let rec updateSizeRec archive ui =
   match ui with
@@ -3028,6 +3077,8 @@ let rec updateSizeRec archive ui =
       | File (desc, ContentsUpdated (_, _, ress)) ->
           fileSize desc ress
       | Symlink l ->
+          sizeOne
+      | Hardlink _ ->
           sizeOne
       | Dir (_, children, _, _) ->
           match archive with

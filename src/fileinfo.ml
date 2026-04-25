@@ -114,6 +114,7 @@ let getAux fromRoot fspath path getProps =
     (fun () ->
        try
          let stats = statFn fromRoot fspath path in
+         if fromRoot then Hardlinks.record path stats;
          debugV (fun () ->
                    Util.msg "%s: %b %f %f\n"
                      (Fspath.toDebugString (Fspath.concat fspath path))

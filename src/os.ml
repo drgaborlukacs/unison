@@ -242,6 +242,16 @@ let symlink =
                   else "")
                ))
 
+let link fspath src dst =
+  Util.convertUnixErrorsToTransient
+    "creating hard link"
+    (fun () ->
+       let srcAbs = Fspath.concat fspath src in
+       let dstAbs = Fspath.concat fspath dst in
+       System.link
+         (System.extendedPath (Fspath.toString srcAbs))
+         (System.extendedPath (Fspath.toString dstAbs)))
+
 (* Create a new directory, using the permissions from the given props        *)
 let createDir fspath path perms =
   Util.convertUnixErrorsToTransient

@@ -270,6 +270,18 @@ let makeSymlink =
        if not Sys.win32 then f () else execInDir (Fspath.toString workingDir) f;
        Lwt.return ())
 
+let makeHardlink =
+  Remote.registerRootCmd
+    "makeHardlink"
+    Umarshal.(prod3 Fspath.m Path.mlocal Path.mlocal id id)
+    Umarshal.float
+    (fun (_, (workingDir, path, primary)) ->
+       if Os.exists workingDir path then
+         Os.delete workingDir path;
+       Os.link workingDir primary path;
+       let st = Fs.lstat (Fspath.concat workingDir path) in
+       Lwt.return st.Unix.LargeFile.st_mtime)
+
 (* ------------------------------------------------------------ *)
 
 let performRename fspathTo localPathTo (workingDirFrom, pathFrom)
@@ -620,6 +632,17 @@ let copy
                Abort.check id;
                makeSymlink rootTo (workingDir, pTo, l) >>= fun () ->
                Lwt.return (f, []))
+         | Update.ArchiveHardlink (primary, _) ->
+             Lwt_util.run_in_region !copyReg 1 (fun () ->
+               debug (fun() ->
+                 Util.msg "Making hardlink %s/%s -> %s\n"
+                   (root2string rootTo) (Path.toString pTo)
+                   (Path.toString primary));
+               Abort.check id;
+               makeHardlink rootTo
+                 (workingDir, pTo, Path.forceLocal primary)
+                 >>= fun mtime ->
+               Lwt.return (Update.ArchiveHardlink (primary, mtime), []))
          | Update.ArchiveDir (desc, children) ->
              Lwt_util.run_in_region !copyReg 1 (fun () ->
                debug (fun() -> Util.msg "Creating directory %s/%s\n"

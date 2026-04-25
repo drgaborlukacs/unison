@@ -3935,7 +3935,12 @@ let createToplevelWindow () =
             return () (* Already processed this one (e.g. merged it) *)
       in
       startStats ();
-      Uicommon.transportItems !theState (fun {ri; _} -> not (Common.isDeletion ri)) uiWrapper;
+      Uicommon.transportItems !theState
+        (fun {ri; _} ->
+           not (Common.isDeletion ri) && not (Common.isHardlinkSecondary ri))
+        uiWrapper;
+      Uicommon.transportItems !theState
+        (fun {ri; _} -> Common.isHardlinkSecondary ri) uiWrapper;
       Uicommon.transportItems !theState (fun {ri; _} -> Common.isDeletion ri) uiWrapper;
       Uicommon.transportFinish ();
       grSet grStop false;

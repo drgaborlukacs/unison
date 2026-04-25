@@ -8,6 +8,7 @@ type archive =
   | ArchiveFile of Props.t * Os.fullfingerprint * Fileinfo.stamp * Osx.ressStamp
   | ArchiveSymlink of string
   | NoArchive
+  | ArchiveHardlink of Path.t * float
 
 val marchive : archive Umarshal.t
 
