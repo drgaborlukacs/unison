@@ -213,6 +213,8 @@ let prevProps newprops ui =
       -> ""
   | Updates (_, New) ->
       " (new)"
+  | Updates (_, PrevHardlink primary) ->
+      " (was: hardlink alias of "^(Path.toString primary)^")"
   | Updates (_, (PrevFile (oldprops, _, _, _) | PrevDir oldprops)) ->
       (* || Props.similar newprops oldprops *)
       " (was: "^(Props.toString oldprops)^")"

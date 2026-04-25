@@ -278,7 +278,48 @@ let makeHardlink =
     (fun (_, (workingDir, path, primary)) ->
        if Os.exists workingDir path then
          Os.delete workingDir path;
-       Os.link workingDir primary path;
+       (try
+          Os.link workingDir primary path
+        with Util.Transient _ as e ->
+          (* If the alias would cross a filesystem boundary, link(2)
+             returns EXDEV.  The cleanest fallback is to copy the
+             primary's content locally so the destination at least has
+             the right bytes, even though the topology is lost. *)
+          let crossDevice =
+            try
+              let s1 = Fs.lstat (Fspath.concat workingDir primary) in
+              let s2 = Fs.lstat (Fspath.concat workingDir
+                                   (Path.parent path)) in
+              s1.Unix.LargeFile.st_dev <> s2.Unix.LargeFile.st_dev
+            with _ -> false
+          in
+          if not crossDevice then raise e
+          else begin
+            Util.warn (Printf.sprintf
+              "Cannot hardlink %s to %s on %s: paths span filesystems.  \
+               Falling back to a content copy; the topology will not be \
+               preserved on this replica.\n"
+              (Path.toString path) (Path.toString primary)
+              (Fspath.toPrintString workingDir));
+            let srcAbs = Fspath.concat workingDir primary in
+            let dstAbs = Fspath.concat workingDir path in
+            let inCh = Fs.open_in_bin srcAbs in
+            let outCh =
+              Fs.open_out_gen
+                [Open_wronly; Open_creat; Open_trunc; Open_binary] 0o600
+                dstAbs
+            in
+            Util.finalize
+              (fun () ->
+                 let buf = Bytes.create 65536 in
+                 let rec loop () =
+                   let n = input inCh buf 0 (Bytes.length buf) in
+                   if n > 0 then begin output outCh buf 0 n; loop () end
+                 in loop ())
+              (fun () ->
+                 (try close_in inCh with _ -> ());
+                 (try close_out outCh with _ -> ()))
+          end);
        let st = Fs.lstat (Fspath.concat workingDir path) in
        Lwt.return st.Unix.LargeFile.st_mtime)
 

@@ -66,6 +66,11 @@ let beginScan () =
   PathTbl.clear pathIndex
 
 let record path stats =
+  (* The S_REG filter is load-bearing: directories always have st_nlink > 1
+     on Unix (because of "." and each subdirectory's "..").  HFS+ on macOS
+     also permits hardlinks to directories, but those are still S_DIR -- we
+     deliberately do not record them, so they are synchronized as
+     independent directories, matching Unison's existing dir behavior. *)
   if recording ()
      && stats.Unix.LargeFile.st_kind = Unix.S_REG
      && stats.Unix.LargeFile.st_nlink > 1

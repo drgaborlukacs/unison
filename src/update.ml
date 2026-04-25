@@ -1469,11 +1469,14 @@ let oldInfoOf archive =
       Common.PrevFile (oldDesc, dig, oldStamp, ress)
   | ArchiveSymlink _ ->
       Common.PrevSymlink
-  | ArchiveHardlink _ ->
-      (* No PrevHardlink yet; report as a file so [oldType] is `FILE.
-         The fingerprint/stamp/ress are dummy. *)
-      Common.PrevFile (Props.dummy, Os.fullfingerprint_dummy,
-                       Fileinfo.NoStamp, Osx.ressDummy)
+  | ArchiveHardlink (primary, _) ->
+      if Hardlinks.featureEnabled () then
+        Common.PrevHardlink primary
+      else
+        (* Feature not negotiated: peer's prevState marshaller is sum4 and
+           cannot decode a PrevHardlink tag.  Fall back to a dummy file. *)
+        Common.PrevFile (Props.dummy, Os.fullfingerprint_dummy,
+                         Fileinfo.NoStamp, Osx.ressDummy)
   | NoArchive ->
       absentInfo
 

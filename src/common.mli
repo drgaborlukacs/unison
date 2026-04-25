@@ -46,6 +46,7 @@ type prevState =
   | PrevFile of Props.t * Os.fullfingerprint * Fileinfo.stamp * Osx.ressStamp
   | PrevSymlink
   | New
+  | PrevHardlink of Path.t      (* path was a hardlink alias of this primary *)
 
 type contentschange =
     ContentsSame

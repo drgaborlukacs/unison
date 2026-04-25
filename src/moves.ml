@@ -230,7 +230,7 @@ let extractStamp rc =
       | Absent | File (_, ContentsSame) ->
           begin match prev with
           | PrevFile (_, _, stamp, _) -> stamp
-          | PrevDir _ | PrevSymlink | New -> assert false
+          | PrevDir _ | PrevSymlink | PrevHardlink _ | New -> assert false
           end
       | File (_, ContentsUpdated (_, stamp, _)) -> stamp
       | Dir _ | Symlink _ | Hardlink _ -> assert false
@@ -244,7 +244,7 @@ let extractProps rc =
           begin match prev with
           | PrevFile (props, _, _, _)
           | PrevDir props -> props
-          | PrevSymlink | New -> assert false
+          | PrevSymlink | PrevHardlink _ | New -> assert false
           end
       | File (props, _)
       | Dir (props, _, _, _) -> props
@@ -443,6 +443,7 @@ let processHint rep path differ = function
   | {status = `Created; ui = Updates (Symlink _, _); _}
   | {status = `Created; ui = Updates (Hardlink _, _); _}
   | {status = `Deleted; ui = Updates (_, PrevSymlink); _}
+  | {status = `Deleted; ui = Updates (_, PrevHardlink _); _}
   | {status = `Modified | `PropsChanged | `Unchanged | `MovedOut _ | `MovedIn _; _}
   | {ui = NoUpdates | Error _; _}
   (* Impossible combinations  *)

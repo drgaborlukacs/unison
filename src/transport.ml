@@ -32,6 +32,11 @@ let fileSize uiFrom uiTo =
   | Updates (_, PrevFile (props, _, _, ress)),
     (NoUpdates | Updates (File (_, ContentsSame), _)) ->
       (Props.length props, Osx.ressLength ress)
+  | Updates (Hardlink _, _), _
+  | _, Updates (Hardlink _, _) ->
+      (* Hardlink propagation does not transfer content; the link is
+         created on the destination by referring to its own primary. *)
+      (Uutil.Filesize.zero, Uutil.Filesize.zero)
   | _ ->
       assert false
 

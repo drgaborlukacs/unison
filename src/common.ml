@@ -87,22 +87,26 @@ type prevState =
   | PrevFile of Props.t * Os.fullfingerprint * Fileinfo.stamp * Osx.ressStamp
   | PrevSymlink
   | New
+  | PrevHardlink of Path.t      (* path was a hardlink alias of this primary *)
 
-let mprevState2 = Umarshal.(sum4
+let mprevState2 = Umarshal.(sum5
                              Props.m
                              (prod4 Props.m Os.mfullfingerprint Fileinfo.mstamp Osx.mressStamp id id)
                              unit
                              unit
+                             Path.m
                              (function
-                              | PrevDir a -> I41 a
-                              | PrevFile (a, b, c, d) -> I42 (a, b, c, d)
-                              | PrevSymlink -> I43 ()
-                              | New -> I44 ())
+                              | PrevDir a -> I51 a
+                              | PrevFile (a, b, c, d) -> I52 (a, b, c, d)
+                              | PrevSymlink -> I53 ()
+                              | New -> I54 ()
+                              | PrevHardlink p -> I55 p)
                              (function
-                              | I41 a -> PrevDir a
-                              | I42 (a, b, c, d) -> PrevFile (a, b, c, d)
-                              | I43 () -> PrevSymlink
-                              | I44 () -> New))
+                              | I51 a -> PrevDir a
+                              | I52 (a, b, c, d) -> PrevFile (a, b, c, d)
+                              | I53 () -> PrevSymlink
+                              | I54 () -> New
+                              | I55 p -> PrevHardlink p))
 
 let prev_to_old = function
   | PrevDir desc ->
@@ -113,6 +117,10 @@ let prev_to_old = function
       Previous (`SYMLINK, Props.dummy, Os.fullfingerprint_dummy, Osx.ressDummy)
   | New ->
       New
+  | PrevHardlink _ ->
+      (* Legacy wire format has no PrevHardlink tag; the closest
+         approximation is a regular file with no fingerprint. *)
+      Previous (`FILE, Props.dummy, Os.fullfingerprint_dummy, Osx.ressDummy)
 
 let prev_of_old = function
   | Previous (`DIRECTORY, desc, _, _) -> PrevDir desc

@@ -531,16 +531,18 @@ let update2replicaContent path (conflict: bool) ui props ucNew oldType:
 
 let oldType (prev: Common.prevState): Fileinfo.typ =
   match prev with
-  | PrevFile _  -> `FILE
-  | PrevDir _   -> `DIRECTORY
-  | PrevSymlink -> `SYMLINK
-  | New         -> `ABSENT
+  | PrevFile _     -> `FILE
+  | PrevDir _      -> `DIRECTORY
+  | PrevSymlink    -> `SYMLINK
+  | New            -> `ABSENT
+  | PrevHardlink _ -> `FILE
 
 let oldDesc (prev: Common.prevState): Props.t =
   match prev with
   | PrevFile (desc, _, _, _)
   | PrevDir desc             -> desc
   | PrevSymlink
+  | PrevHardlink _
   | New                      -> Props.dummy
 
 (* [describeUpdate ui] returns the replica contents for both the case of     *)
