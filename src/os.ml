@@ -318,6 +318,14 @@ let rename ?exdev fname sourcefspath sourcepath targetfspath targetpath =
         if useInplace then begin
           debug (fun() -> Util.msg "rename: inplace update of %s\n" target');
           inplaceUpdate source target;
+          (* rename(2) would have brought source's full metadata across
+             with the inode swap (mtime, perms, uid/gid, xattrs, ACLs).
+             Mirror those onto target now, since we kept target's inode. *)
+          let srcInfo = Fileinfo.get false sourcefspath sourcepath in
+          let srcDesc =
+            Props.loadExtData sourcefspath sourcepath srcInfo.Fileinfo.desc in
+          Fileinfo.set targetfspath targetpath
+            (`Set Props.fileDefault) srcDesc;
           Fs.unlink source
         end else
         try
