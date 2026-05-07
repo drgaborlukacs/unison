@@ -40,9 +40,22 @@ let serverHostName = localCanonicalHostName
 let myCanonicalHostName () =
   if !Trace.runningasserver then serverHostName else Prefs.read clientHostName
 
+(* The inplace-rename pref is local on each side and is sent over RPC only
+   when the peer also advertises this feature, so old peers (which don't
+   know the pref name) don't reject the connection during pref sync. *)
+let featInplaceRenameValid = ref (fun _ _ -> None)
+
+let featInplaceRename =
+  Features.register "Sync: Inplace rename"
+    (Some (fun a b -> !featInplaceRenameValid a b))
+
+let inplaceRenameSupported () = Features.enabled featInplaceRename
+
 let inplaceRename =
   Prefs.createBool "inplaceRename" false
     ~category:(`Advanced `General)
+    ~local:true
+    ~send:inplaceRenameSupported
     "preserve destination inode when replacing an existing regular file"
     ("When set, Os.rename copies contents into the existing destination "
    ^ "regular file (preserving its inode) instead of using rename(2) to "
@@ -51,11 +64,16 @@ let inplaceRename =
    ^ "btrfs) retain only the changed blocks instead of the whole file.  "
    ^ "Atomicity of the replacement is given up in exchange.  Falls through "
    ^ "to the normal rename for symlinks, directories, and the case where "
-   ^ "the destination does not yet exist.  Disabled by default.")
+   ^ "the destination does not yet exist.  Disabled by default.  Has effect "
+   ^ "only on the side(s) where it is set; if the peer is an older Unison "
+   ^ "that does not understand this preference, a warning is emitted and "
+   ^ "the peer falls back to ordinary rename.")
 
 let inplaceBlockSize =
   Prefs.create "inplaceBlockSize" 16
     ~category:(`Advanced `General)
+    ~local:true
+    ~send:inplaceRenameSupported
     "block size in KiB for inplaceRename (must be a power of 2)"
     ("Block size in KiB used by \\verb|inplaceRename| when comparing source "
    ^ "and destination to skip writes for unchanged blocks.  Must be a "
@@ -79,6 +97,18 @@ let inplaceBlockSize =
        k)
     (fun k -> [string_of_int k])
     Umarshal.int
+
+let () = featInplaceRenameValid :=
+  fun _feats enabledThis ->
+    if Prefs.read inplaceRename && not enabledThis then begin
+      Util.warn
+        ("The \"inplaceRename\" preference is set on this side but the "
+       ^ "peer does not support it.  Renames performed on the peer side "
+       ^ "will fall back to ordinary rename(2); inode preservation only "
+       ^ "applies on sides where both the preference is set and the "
+       ^ "Unison version supports it.")
+    end;
+    None
 
 let tempFilePrefix = ".unison."
 let tempFileSuffixFixed = ".unison.tmp"
